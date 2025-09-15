@@ -50,14 +50,27 @@ def leer_turnos():
     return pd.DataFrame(data)
 
 def guardar_turno(nombre, servicio, fecha, tipo_turno, observacion):
-    # Leer los registros existentes
-    existing = hoja_turnos.get_all_records()
+    # Leer registros existentes
+    existing = hoja_turnos.get_all_values()
+
+    # Si la hoja está vacía o solo tiene filas vacías, agregar encabezados
+    if not existing or existing == [[]]:
+        hoja_turnos.append_row(["Nombre", "Servicio", "Fecha", "Tipo_Turno", "Observacion"])
+        existing = hoja_turnos.get_all_values()
+
+    headers = existing[0]  # Primera fila como encabezados
+    data_rows = existing[1:]
+
+    # Convertir filas en diccionarios usando encabezados
+    existing_dicts = [dict(zip(headers, row)) for row in data_rows]
+
     # Verificar duplicado
-    for row in existing:
-        if row["Nombre"] == nombre and row["Fecha"] == str(fecha):
+    for row in existing_dicts:
+        if row.get("Nombre") == nombre and row.get("Fecha") == str(fecha):
             st.warning(f"⚠️ El trabajador {nombre} ya tiene un turno registrado el {fecha}")
             return
-    # Agregar si no existe
+
+    # Si no existe duplicado, agregar
     hoja_turnos.append_row([nombre, servicio, str(fecha), tipo_turno, observacion])
 
 # ---------------- TRABAJADORES ----------------
