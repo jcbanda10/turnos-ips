@@ -27,7 +27,6 @@ except KeyError:
 # ---------------- GOOGLE SHEET ----------------
 SHEET_ID = "1pTSu9qr79Y544VFOL3_hjXBqvLVV8xR3Loi9fFs3WrY"
 
-# Función para abrir o crear hoja "Turnos"
 def obtener_hoja(sheet_id, nombre_hoja="Turnos"):
     try:
         spreadsheet = client.open_by_key(sheet_id)
@@ -35,11 +34,9 @@ def obtener_hoja(sheet_id, nombre_hoja="Turnos"):
             hoja = spreadsheet.worksheet(nombre_hoja)
         except gspread.WorksheetNotFound:
             hoja = spreadsheet.add_worksheet(title=nombre_hoja, rows="100", cols="10")
-        
-        # Verificar si la hoja está vacía y agregar encabezados
+        # Agregar encabezados si la hoja está vacía
         if hoja.get_all_values() == []:
             hoja.append_row(["Nombre", "Servicio", "Fecha", "Tipo_Turno", "Observacion"])
-        
         return hoja
     except gspread.SpreadsheetNotFound:
         st.error("❌ No se encontró el Google Sheet. Verifica el ID y que la cuenta de servicio tenga acceso.")
@@ -53,6 +50,14 @@ def leer_turnos():
     return pd.DataFrame(data)
 
 def guardar_turno(nombre, servicio, fecha, tipo_turno, observacion):
+    # Leer los registros existentes
+    existing = hoja_turnos.get_all_records()
+    # Verificar duplicado
+    for row in existing:
+        if row["Nombre"] == nombre and row["Fecha"] == str(fecha):
+            st.warning(f"⚠️ El trabajador {nombre} ya tiene un turno registrado el {fecha}")
+            return
+    # Agregar si no existe
     hoja_turnos.append_row([nombre, servicio, str(fecha), tipo_turno, observacion])
 
 # ---------------- TRABAJADORES ----------------
@@ -69,7 +74,7 @@ with st.expander("➕ Agregar trabajador"):
     with st.form("form_add_worker"):
         col1, col2 = st.columns(2)
         with col1:
-            nuevo_nombre = st.text_input("Nombre del trabajador")
+            nuevo_nombre = st.text_input("Nombre completo (Nombre + Primer Apellido + Segundo Apellido)").strip()
         with col2:
             nuevo_servicio = st.selectbox("Servicio", SERVICIOS)
         add_worker = st.form_submit_button("Agregar")
