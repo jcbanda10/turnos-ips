@@ -35,6 +35,11 @@ def obtener_hoja(sheet_id, nombre_hoja="Turnos"):
             hoja = spreadsheet.worksheet(nombre_hoja)
         except gspread.WorksheetNotFound:
             hoja = spreadsheet.add_worksheet(title=nombre_hoja, rows="100", cols="10")
+        
+        # Verificar si la hoja está vacía y agregar encabezados
+        if hoja.get_all_values() == []:
+            hoja.append_row(["Nombre", "Servicio", "Fecha", "Tipo_Turno", "Observacion"])
+        
         return hoja
     except gspread.SpreadsheetNotFound:
         st.error("❌ No se encontró el Google Sheet. Verifica el ID y que la cuenta de servicio tenga acceso.")
@@ -128,6 +133,13 @@ with st.form("registro_turnos"):
 # ---------------- MOSTRAR DATOS ----------------
 if not df_turnos.empty:
     st.subheader("📑 Turnos registrados")
+
+    # Asegurarse de que las columnas requeridas existan
+    required_columns = ["Nombre","Servicio","Fecha","Tipo_Turno","Observacion"]
+    for col in required_columns:
+        if col not in df_turnos.columns:
+            df_turnos[col] = ""
+
     st.dataframe(df_turnos, use_container_width=True)
 
     # Consolidado
