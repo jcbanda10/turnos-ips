@@ -11,12 +11,8 @@ if "turnos" not in st.session_state:
     st.session_state.turnos = []
 
 # ---------------- ENCABEZADO ----------------
-col_logo, col_title = st.columns([1,4])
-with col_logo:
-    st.image("logo.png", width=120)  # 👈 coloca tu logo en la misma carpeta que app.py
-with col_title:
-    st.title("🏥 Registro de Turnos IPS")
-    st.write("Sistema de control de turnos **Nocturnos, Dominicales y Festivos**")
+st.title("🏥 Registro de Turnos IPS")
+st.write("Sistema de control de turnos **Nocturnos, Dominicales y Festivos**")
 
 # ---------------- FORMULARIO ----------------
 st.subheader("📋 Registro manual de turnos")
@@ -68,8 +64,6 @@ if uploaded_file:
         else:
             df_upload = pd.read_csv(uploaded_file)
 
-        # Normalizamos nombres de columnas mínimas
-        # Se espera que el archivo tenga: Nombre, Servicio, Fecha, Tipo_Turno, Observacion
         columnas_necesarias = ["Nombre","Servicio","Fecha","Tipo_Turno"]
         for col in columnas_necesarias:
             if col not in df_upload.columns:
@@ -78,10 +72,7 @@ if uploaded_file:
                 break
 
         if df_upload is not None:
-            # Convertir Fecha a datetime si viene como texto
             df_upload["Fecha"] = pd.to_datetime(df_upload["Fecha"]).dt.date
-
-            # Unir con los registros manuales
             for _, row in df_upload.iterrows():
                 st.session_state.turnos.append({
                     "Nombre": row["Nombre"],
@@ -111,13 +102,11 @@ if st.session_state.turnos:
     st.subheader("📊 Consolidado por trabajador")
     st.dataframe(reporte, use_container_width=True)
 
-    # ---------------- GRÁFICO ----------------
     st.bar_chart(
         reporte.set_index("Nombre")[["Horas_Nocturnas","Horas_Dominicales","Horas_Festivas"]],
         use_container_width=True
     )
 
-    # ---------------- DESCARGAS ----------------
     st.subheader("📥 Exportar reportes")
     with pd.ExcelWriter("reporte_turnos.xlsx") as writer:
         reporte.to_excel(writer, sheet_name="Consolidado", index=False)
