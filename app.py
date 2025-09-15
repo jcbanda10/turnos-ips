@@ -11,20 +11,67 @@ if "turnos" not in st.session_state:
     st.session_state.turnos = []
 if "cronograma" not in st.session_state:
     st.session_state.cronograma = None
+if "trabajadores" not in st.session_state:
+    st.session_state.trabajadores = {
+        "URGENCIA": [],
+        "UCI": [],
+        "HOSPITALIZACIÓN": [],
+        "CIRUGÍA": [],
+        "LABORATORIO": [],
+        "FARMACIA": [],
+        "AUXILIARES MÉDICOS": [],
+        "SERVICIOS GENERALES": [],
+        "MANTENIMIENTO": [],
+        "SEGURIDAD": [],
+        "ADMISIONES": [],
+        "ADMINISTRATIVOS": []
+    }
 
 # ---------------- ENCABEZADO ----------------
 st.title("🏥 Registro de Turnos IPS")
 st.write("Sistema de control de turnos **Nocturnos, Dominicales y Festivos**")
 
-# ---------------- FORMULARIO ----------------
+# ---------------- GESTIÓN DE TRABAJADORES ----------------
+st.subheader("👥 Gestión de trabajadores")
+
+with st.expander("➕ Agregar trabajador"):
+    with st.form("form_add_worker"):
+        col1, col2 = st.columns(2)
+        with col1:
+            nuevo_nombre = st.text_input("Nombre del trabajador")
+        with col2:
+            nuevo_servicio = st.selectbox("Servicio", list(st.session_state.trabajadores.keys()))
+        add_worker = st.form_submit_button("Agregar")
+        if add_worker and nuevo_nombre:
+            if nuevo_nombre not in st.session_state.trabajadores[nuevo_servicio]:
+                st.session_state.trabajadores[nuevo_servicio].append(nuevo_nombre)
+                st.success(f"✅ {nuevo_nombre} agregado a {nuevo_servicio}")
+            else:
+                st.warning("⚠️ Ese trabajador ya existe en este servicio")
+
+with st.expander("🗑️ Eliminar trabajador"):
+    servicio_borrar = st.selectbox("Selecciona servicio", list(st.session_state.trabajadores.keys()))
+    if st.session_state.trabajadores[servicio_borrar]:
+        trabajador_borrar = st.selectbox("Selecciona trabajador", st.session_state.trabajadores[servicio_borrar])
+        if st.button("Eliminar trabajador"):
+            st.session_state.trabajadores[servicio_borrar].remove(trabajador_borrar)
+            st.success(f"🗑️ {trabajador_borrar} eliminado de {servicio_borrar}")
+    else:
+        st.info("No hay trabajadores en este servicio")
+
+# ---------------- FORMULARIO DE TURNOS ----------------
 st.subheader("📋 Registro manual de turnos")
 
 with st.form("registro_turnos"):
     col1, col2 = st.columns(2)
     with col1:
-        nombre = st.text_input("👤 Nombre del trabajador")
+        servicio = st.selectbox("🏥 Servicio", list(st.session_state.trabajadores.keys()))
     with col2:
-        servicio = st.text_input("🏥 Servicio / Área")
+        if st.session_state.trabajadores[servicio]:
+            nombre = st.selectbox("👤 Nombre del trabajador", st.session_state.trabajadores[servicio])
+        else:
+            nombre = None
+            st.warning("⚠️ No hay trabajadores en este servicio, agréguelos primero")
 
     col3, col4 = st.columns(2)
     with col3:
@@ -99,15 +146,11 @@ if st.session_state.turnos:
     st.subheader("📥 Exportar reportes")
 
     with pd.ExcelWriter("reporte_turnos.xlsx", engine="openpyxl") as writer:
-        # Hoja 1: Consolidado
         reporte.to_excel(writer, sheet_name="Consolidado", index=False)
-        # Hoja 2: Detalle
         df.to_excel(writer, sheet_name="Detalle", index=False)
-        # Hoja 3: Resumen por servicio
         resumen_servicio = df.groupby("Servicio")[["Horas_Nocturnas","Horas_Dominicales","Horas_Festivas"]].sum().reset_index()
         resumen_servicio["Horas_Totales"] = resumen_servicio.sum(axis=1, numeric_only=True)
         resumen_servicio.to_excel(writer, sheet_name="Resumen_Servicio", index=False)
-        # Hoja 4: Cronograma cargado (si existe)
         if st.session_state.cronograma is not None:
             st.session_state.cronograma.to_excel(writer, sheet_name="Cronograma", index=False)
 
