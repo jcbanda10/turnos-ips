@@ -2,38 +2,51 @@ import streamlit as st
 import pandas as pd
 import datetime
 import holidays
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+st.set_page_config(page_title="Registro de Turnos IPS", layout="wide")
+
+st.title("🏥 Registro de Turnos IPS con Google Sheets")
 
 # ---------------- CONFIGURACIÓN ----------------
 colombia_holidays = holidays.CO()
 
-# Estado global
-if "turnos" not in st.session_state:
-    st.session_state.turnos = []
-if "cronograma" not in st.session_state:
-    st.session_state.cronograma = None
+# ---------------- CONEXIÓN CON GOOGLE SHEETS ----------------
+scope = ["https://spreadsheets.google.com/feeds","https://www.googleapis.com/auth/drive"]
+creds_dict = st.secrets["google_service_account"]
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+client = gspread.authorize(creds)
+
+# Reemplaza con tu Google Sheet ID
+SHEET_ID = "TU_SHEET_ID"
+spreadsheet = client.open_by_key(SHEET_ID)
+
+# Función para leer datos existentes
+def leer_turnos():
+    try:
+        hoja = spreadsheet.worksheet("Turnos")
+        data = hoja.get_all_records()
+        return pd.DataFrame(data)
+    except:
+        spreadsheet.add_worksheet(title="Turnos", rows="100", cols="10")
+        return pd.DataFrame(columns=["Nombre","Servicio","Fecha","Tipo_Turno","Observacion"])
+
+# Función para guardar un turno
+def guardar_turno(nombre, servicio, fecha, tipo_turno, observacion):
+    hoja = spreadsheet.worksheet("Turnos")
+    hoja.append_row([nombre, servicio, str(fecha), tipo_turno, observacion])
+
+# ---------------- TRABAJADORES ----------------
 if "trabajadores" not in st.session_state:
     st.session_state.trabajadores = {
-        "URGENCIA": [],
-        "UCI": [],
-        "HOSPITALIZACIÓN": [],
-        "CIRUGÍA": [],
-        "LABORATORIO": [],
-        "FARMACIA": [],
-        "AUXILIARES MÉDICOS": [],
-        "SERVICIOS GENERALES": [],
-        "MANTENIMIENTO": [],
-        "SEGURIDAD": [],
-        "ADMISIONES": [],
-        "ADMINISTRATIVOS": []
+        "URGENCIA": [], "UCI": [], "HOSPITALIZACIÓN": [], "CIRUGÍA": [],
+        "LABORATORIO": [], "FARMACIA": [], "AUXILIARES MÉDICOS": [],
+        "SERVICIOS GENERALES": [], "MANTENIMIENTO": [], "SEGURIDAD": [],
+        "ADMISIONES": [], "ADMINISTRATIVOS": []
     }
 
-# ---------------- ENCABEZADO ----------------
-st.title("🏥 Registro de Turnos IPS")
-st.write("Sistema de control de turnos **Nocturnos, Dominicales y Festivos**")
-
-# ---------------- GESTIÓN DE TRABAJADORES ----------------
 st.subheader("👥 Gestión de trabajadores")
-
 with st.expander("➕ Agregar trabajador"):
     with st.form("form_add_worker"):
         col1, col2 = st.columns(2)
@@ -60,7 +73,8 @@ with st.expander("🗑️ Eliminar trabajador"):
         st.info("No hay trabajadores en este servicio")
 
 # ---------------- FORMULARIO DE TURNOS ----------------
-st.subheader("📋 Registro manual de turnos")
+st.subheader("📋 Registro de turnos")
+df_turnos = leer_turnos()
 
 with st.form("registro_turnos"):
     col1, col2 = st.columns(2)
@@ -79,7 +93,7 @@ with st.form("registro_turnos"):
     with col4:
         anio = st.number_input("🗓️ Año", value=datetime.date.today().year, step=1)
 
-    # Lista de fechas del mes seleccionado
+    # Fechas del mes
     primer_dia = datetime.date(anio, mes, 1)
     fechas = []
     d = primer_dia
@@ -94,66 +108,30 @@ with st.form("registro_turnos"):
     submitted = st.form_submit_button("✅ Registrar turnos")
     if submitted and nombre and servicio and fechas_sel:
         for f in fechas_sel:
-            st.session_state.turnos.append({
-                "Nombre": nombre,
-                "Servicio": servicio,
-                "Fecha": f,
-                "Tipo_Turno": tipo_turno,
-                "Observacion": observacion
-            })
-        st.success("Turnos registrados correctamente")
+            guardar_turno(nombre, servicio, f, tipo_turno, observacion)
+        st.success("Turnos registrados y guardados en Google Sheets ✅")
+        df_turnos = leer_turnos()
 
-# ---------------- SUBIDA DE ARCHIVO ----------------
-st.subheader("📂 Cargar cronograma de turnos")
+# ---------------- MOSTRAR DATOS ----------------
+if not df_turnos.empty:
+    st.subheader("📑 Turnos registrados")
+    st.dataframe(df_turnos, use_container_width=True)
 
-uploaded_file = st.file_uploader("Sube un archivo Excel o CSV (cualquier formato)", type=["xlsx","csv"])
-if uploaded_file:
-    try:
-        if uploaded_file.name.endswith(".xlsx"):
-            df_upload = pd.read_excel(uploaded_file)
-        else:
-            df_upload = pd.read_csv(uploaded_file)
+    # Consolidado
+    df_turnos["Horas_Nocturnas"] = df_turnos.apply(lambda x: 8 if x["Tipo_Turno"]=="Nocturno" else 0, axis=1)
+    df_turnos["Horas_Dominicales"] = df_turnos.apply(lambda x: 8 if x["Tipo_Turno"]=="Dominical" or pd.to_datetime(x["Fecha"]).weekday()==6 else 0, axis=1)
+    df_turnos["Horas_Festivas"] = df_turnos.apply(lambda x: 8 if x["Tipo_Turno"]=="Festivo" or pd.to_datetime(x["Fecha"]) in colombia_holidays else 0, axis=1)
 
-        st.session_state.cronograma = df_upload
-        st.success("📥 Cronograma cargado correctamente")
-        st.dataframe(df_upload, use_container_width=True)
-    except Exception as e:
-        st.error(f"❌ Error al leer el archivo: {e}")
-
-# ---------------- DETALLE ----------------
-if st.session_state.turnos:
-    df = pd.DataFrame(st.session_state.turnos)
-    st.subheader("📑 Detalle de registros")
-    st.dataframe(df, use_container_width=True)
-
-    # ---------------- CONSOLIDADO ----------------
-    df["Horas_Nocturnas"] = df.apply(lambda x: 8 if x["Tipo_Turno"]=="Nocturno" else 0, axis=1)
-    df["Horas_Dominicales"] = df.apply(lambda x: 8 if x["Tipo_Turno"]=="Dominical" or x["Fecha"].weekday()==6 else 0, axis=1)
-    df["Horas_Festivas"] = df.apply(lambda x: 8 if x["Tipo_Turno"]=="Festivo" or x["Fecha"] in colombia_holidays else 0, axis=1)
-
-    reporte = df.groupby(["Servicio","Nombre"])[["Horas_Nocturnas","Horas_Dominicales","Horas_Festivas"]].sum().reset_index()
+    reporte = df_turnos.groupby(["Servicio","Nombre"])[["Horas_Nocturnas","Horas_Dominicales","Horas_Festivas"]].sum().reset_index()
     reporte["Horas_Totales_Adicionales"] = reporte.sum(axis=1, numeric_only=True)
 
     st.subheader("📊 Consolidado por trabajador")
     st.dataframe(reporte, use_container_width=True)
 
-    st.bar_chart(
-        reporte.set_index("Nombre")[["Horas_Nocturnas","Horas_Dominicales","Horas_Festivas"]],
-        use_container_width=True
-    )
-
-    # ---------------- EXPORTAR ----------------
+    # Exportar Excel
     st.subheader("📥 Exportar reportes")
-
     with pd.ExcelWriter("reporte_turnos.xlsx", engine="openpyxl") as writer:
         reporte.to_excel(writer, sheet_name="Consolidado", index=False)
-        df.to_excel(writer, sheet_name="Detalle", index=False)
-        resumen_servicio = df.groupby("Servicio")[["Horas_Nocturnas","Horas_Dominicales","Horas_Festivas"]].sum().reset_index()
-        resumen_servicio["Horas_Totales"] = resumen_servicio.sum(axis=1, numeric_only=True)
-        resumen_servicio.to_excel(writer, sheet_name="Resumen_Servicio", index=False)
-        if st.session_state.cronograma is not None:
-            st.session_state.cronograma.to_excel(writer, sheet_name="Cronograma", index=False)
-
+        df_turnos.to_excel(writer, sheet_name="Detalle", index=False)
     with open("reporte_turnos.xlsx","rb") as f:
-        st.download_button("⬇️ Descargar Excel con todas las pestañas", 
-                           f, file_name="reporte_turnos.xlsx")
+        st.download_button("⬇️ Descargar Excel", f, file_name="reporte_turnos.xlsx")
