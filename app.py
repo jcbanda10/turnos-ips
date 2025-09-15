@@ -50,27 +50,21 @@ def leer_turnos():
     return pd.DataFrame(data)
 
 def guardar_turno(nombre, servicio, fecha, tipo_turno, observacion):
-    # Leer registros existentes
     existing = hoja_turnos.get_all_values()
 
-    # Si la hoja está vacía o solo tiene filas vacías, agregar encabezados
     if not existing or existing == [[]]:
         hoja_turnos.append_row(["Nombre", "Servicio", "Fecha", "Tipo_Turno", "Observacion"])
         existing = hoja_turnos.get_all_values()
 
-    headers = existing[0]  # Primera fila como encabezados
+    headers = existing[0]
     data_rows = existing[1:]
-
-    # Convertir filas en diccionarios usando encabezados
     existing_dicts = [dict(zip(headers, row)) for row in data_rows]
 
-    # Verificar duplicado
     for row in existing_dicts:
         if row.get("Nombre") == nombre and row.get("Fecha") == str(fecha):
             st.warning(f"⚠️ El trabajador {nombre} ya tiene un turno registrado el {fecha}")
             return
 
-    # Si no existe duplicado, agregar
     hoja_turnos.append_row([nombre, servicio, str(fecha), tipo_turno, observacion])
 
 # ---------------- TRABAJADORES ----------------
@@ -129,7 +123,6 @@ with st.form("registro_turnos"):
     with col4:
         anio = st.number_input("🗓️ Año", value=datetime.date.today().year, step=1)
 
-    # Fechas del mes
     primer_dia = datetime.date(anio, mes, 1)
     fechas = []
     d = primer_dia
@@ -152,7 +145,6 @@ with st.form("registro_turnos"):
 if not df_turnos.empty:
     st.subheader("📑 Turnos registrados")
 
-    # Asegurarse de que las columnas requeridas existan
     required_columns = ["Nombre","Servicio","Fecha","Tipo_Turno","Observacion"]
     for col in required_columns:
         if col not in df_turnos.columns:
@@ -163,7 +155,7 @@ if not df_turnos.empty:
     # Consolidado
     df_turnos["Horas_Nocturnas"] = df_turnos.apply(lambda x: 8 if x["Tipo_Turno"]=="Nocturno" else 0, axis=1)
     df_turnos["Horas_Dominicales"] = df_turnos.apply(lambda x: 8 if x["Tipo_Turno"]=="Dominical" or pd.to_datetime(x["Fecha"]).weekday()==6 else 0, axis=1)
-    df_turnos["Horas_Festivas"] = df_turnos.apply(lambda x: 8 if x["Tipo_Turno"]=="Festivo" or pd.to_datetime(x["Fecha"]) in holidays.CO() else 0, axis=1)
+    df_turnos["Horas_Festivas"] = df_turnos.apply(lambda x: 8 if x["Tipo_Turno"]=="Festivo" or pd.to_datetime(x["Fecha"]).date() in colombia_holidays else 0, axis=1)
 
     reporte = df_turnos.groupby(["Servicio","Nombre"])[["Horas_Nocturnas","Horas_Dominicales","Horas_Festivas"]].sum().reset_index()
     reporte["Horas_Totales_Adicionales"] = reporte.sum(axis=1, numeric_only=True)
@@ -171,7 +163,6 @@ if not df_turnos.empty:
     st.subheader("📊 Consolidado por trabajador")
     st.dataframe(reporte, use_container_width=True)
 
-    # Exportar Excel
     st.subheader("📥 Exportar reportes")
     with pd.ExcelWriter("reporte_turnos.xlsx", engine="openpyxl") as writer:
         reporte.to_excel(writer, sheet_name="Consolidado", index=False)
