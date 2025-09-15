@@ -1,0 +1,6 @@
+[theme]
+primaryColor = "#0057b7"            # Azul fuerte
+backgroundColor = "#ffffff"         # Fondo blanco limpio
+secondaryBackgroundColor = "#fff3cd" # Amarillo suave pastel
+textColor = "#1a1a1a"               # Texto casi negro
+font = "sans serif"
