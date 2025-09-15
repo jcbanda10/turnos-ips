@@ -9,6 +9,8 @@ colombia_holidays = holidays.CO()
 # Estado global
 if "turnos" not in st.session_state:
     st.session_state.turnos = []
+if "cronograma" not in st.session_state:
+    st.session_state.cronograma = None
 
 # ---------------- ENCABEZADO ----------------
 st.title("🏥 Registro de Turnos IPS")
@@ -30,6 +32,7 @@ with st.form("registro_turnos"):
     with col4:
         anio = st.number_input("🗓️ Año", value=datetime.date.today().year, step=1)
 
+    # Lista de fechas del mes seleccionado
     primer_dia = datetime.date(anio, mes, 1)
     fechas = []
     d = primer_dia
@@ -42,7 +45,7 @@ with st.form("registro_turnos"):
     observacion = st.text_area("📝 Observaciones (opcional)")
 
     submitted = st.form_submit_button("✅ Registrar turnos")
-    if submitted:
+    if submitted and nombre and servicio and fechas_sel:
         for f in fechas_sel:
             st.session_state.turnos.append({
                 "Nombre": nombre,
@@ -56,7 +59,7 @@ with st.form("registro_turnos"):
 # ---------------- SUBIDA DE ARCHIVO ----------------
 st.subheader("📂 Cargar cronograma de turnos")
 
-uploaded_file = st.file_uploader("Sube un archivo Excel o CSV con el cronograma", type=["xlsx","csv"])
+uploaded_file = st.file_uploader("Sube un archivo Excel o CSV (cualquier formato)", type=["xlsx","csv"])
 if uploaded_file:
     try:
         if uploaded_file.name.endswith(".xlsx"):
@@ -64,24 +67,9 @@ if uploaded_file:
         else:
             df_upload = pd.read_csv(uploaded_file)
 
-        columnas_necesarias = ["Nombre","Servicio","Fecha","Tipo_Turno"]
-        for col in columnas_necesarias:
-            if col not in df_upload.columns:
-                st.error(f"⚠️ Falta la columna obligatoria: {col}")
-                df_upload = None
-                break
-
-        if df_upload is not None:
-            df_upload["Fecha"] = pd.to_datetime(df_upload["Fecha"]).dt.date
-            for _, row in df_upload.iterrows():
-                st.session_state.turnos.append({
-                    "Nombre": row["Nombre"],
-                    "Servicio": row["Servicio"],
-                    "Fecha": row["Fecha"],
-                    "Tipo_Turno": row["Tipo_Turno"],
-                    "Observacion": row.get("Observacion","")
-                })
-            st.success("📥 Cronograma cargado y anexado al consolidado")
+        st.session_state.cronograma = df_upload
+        st.success("📥 Cronograma cargado correctamente")
+        st.dataframe(df_upload, use_container_width=True)
     except Exception as e:
         st.error(f"❌ Error al leer el archivo: {e}")
 
@@ -107,12 +95,22 @@ if st.session_state.turnos:
         use_container_width=True
     )
 
+    # ---------------- EXPORTAR ----------------
     st.subheader("📥 Exportar reportes")
-    with pd.ExcelWriter("reporte_turnos.xlsx") as writer:
+
+    with pd.ExcelWriter("reporte_turnos.xlsx", engine="openpyxl") as writer:
+        # Hoja 1: Consolidado
         reporte.to_excel(writer, sheet_name="Consolidado", index=False)
+        # Hoja 2: Detalle
         df.to_excel(writer, sheet_name="Detalle", index=False)
+        # Hoja 3: Resumen por servicio
+        resumen_servicio = df.groupby("Servicio")[["Horas_Nocturnas","Horas_Dominicales","Horas_Festivas"]].sum().reset_index()
+        resumen_servicio["Horas_Totales"] = resumen_servicio.sum(axis=1, numeric_only=True)
+        resumen_servicio.to_excel(writer, sheet_name="Resumen_Servicio", index=False)
+        # Hoja 4: Cronograma cargado (si existe)
+        if st.session_state.cronograma is not None:
+            st.session_state.cronograma.to_excel(writer, sheet_name="Cronograma", index=False)
 
     with open("reporte_turnos.xlsx","rb") as f:
-        st.download_button("⬇️ Descargar Excel", f, file_name="reporte_turnos.xlsx")
-
-    st.download_button("⬇️ Descargar CSV (detalle)", df.to_csv(index=False), file_name="detalle_turnos.csv", mime="text/csv")
+        st.download_button("⬇️ Descargar Excel con todas las pestañas", 
+                           f, file_name="reporte_turnos.xlsx")
