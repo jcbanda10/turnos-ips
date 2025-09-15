@@ -6,10 +6,14 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 st.set_page_config(page_title="Registro de Turnos IPS", layout="wide")
-st.title("🏥 Registro de Turnos IPS con Google Sheets")
+st.title("🏥 Registro de Turnos IPS con Google Sheets por Servicio")
 
 # ---------------- CONFIGURACIÓN ----------------
 colombia_holidays = holidays.CO()
+SERVICIOS = ["URGENCIA", "UCI", "HOSPITALIZACIÓN", "CIRUGÍA",
+             "LABORATORIO", "FARMACIA", "AUXILIARES MÉDICOS",
+             "SERVICIOS GENERALES", "MANTENIMIENTO", "SEGURIDAD",
+             "ADMISIONES", "ADMINISTRATIVOS"]
 
 # ---------------- CONEXIÓN CON GOOGLE SHEETS ----------------
 try:
@@ -24,46 +28,52 @@ except KeyError:
     )
     st.stop()
 
-# ---------------- GOOGLE SHEET ----------------
 SHEET_ID = "1pTSu9qr79Y544VFOL3_hjXBqvLVV8xR3Loi9fFs3WrY"
 
-def obtener_hoja(sheet_id, nombre_hoja="Turnos"):
-    try:
-        spreadsheet = client.open_by_key(sheet_id)
-        try:
-            hoja = spreadsheet.worksheet(nombre_hoja)
-        except gspread.WorksheetNotFound:
-            hoja = spreadsheet.add_worksheet(title=nombre_hoja, rows="100", cols="10")
-        # Agregar encabezados si la hoja está vacía
-        if hoja.get_all_values() == []:
-            hoja.append_row(["Nombre", "Servicio", "Fecha", "Tipo_Turno", "Observacion"])
-        return hoja
-    except gspread.SpreadsheetNotFound:
-        st.error("❌ No se encontró el Google Sheet. Verifica el ID y que la cuenta de servicio tenga acceso.")
-        st.stop()
-
-hoja_turnos = obtener_hoja(SHEET_ID, "Turnos")
-
 # ---------------- FUNCIONES ----------------
-def leer_turnos():
-    data = hoja_turnos.get_all_records()
-    return pd.DataFrame(data)
+def obtener_hoja(sheet_id, nombre_hoja):
+    """Obtiene o crea una hoja según el nombre de servicio"""
+    spreadsheet = client.open_by_key(sheet_id)
+    try:
+        hoja = spreadsheet.worksheet(nombre_hoja)
+    except gspread.WorksheetNotFound:
+        hoja = spreadsheet.add_worksheet(title=nombre_hoja, rows="100", cols="10")
+        hoja.append_row(["Nombre", "Fecha", "Tipo_Turno", "Observacion"])  # Encabezados
+    return hoja
 
 def guardar_turno(nombre, servicio, fecha, tipo_turno, observacion):
-    df_existente = pd.DataFrame(hoja_turnos.get_all_records())
+    hoja = obtener_hoja(SHEET_ID, servicio)
+    df_existente = pd.DataFrame(hoja.get_all_records())
 
-    # Asegurar que las columnas existan
-    for col in ["Nombre","Servicio","Fecha","Tipo_Turno","Observacion"]:
+    # Asegurar columnas
+    for col in ["Nombre","Fecha","Tipo_Turno","Observacion"]:
         if col not in df_existente.columns:
             df_existente[col] = ""
 
-    # Verificamos si ya existe un registro con el mismo nombre y fecha
+    # Verificar duplicado
     if ((df_existente["Nombre"] == nombre) & (df_existente["Fecha"] == str(fecha))).any():
-        st.warning(f"⚠️ El trabajador {nombre} ya tiene un turno registrado el {fecha}")
+        st.warning(f"⚠️ {nombre} ya tiene turno el {fecha} en {servicio}")
         return
 
-    # Si no existe, agregamos
-    hoja_turnos.append_row([nombre, servicio, str(fecha), tipo_turno, observacion])
+    hoja.append_row([nombre, str(fecha), tipo_turno, observacion])
+
+def leer_todos_turnos():
+    """Lee todas las pestañas de servicios y las concatena"""
+    spreadsheet = client.open_by_key(SHEET_ID)
+    todos_dfs = []
+    for servicio in SERVICIOS:
+        try:
+            hoja = spreadsheet.worksheet(servicio)
+            df = pd.DataFrame(hoja.get_all_records())
+            if not df.empty:
+                df["Servicio"] = servicio
+                todos_dfs.append(df)
+        except gspread.WorksheetNotFound:
+            continue
+    if todos_dfs:
+        return pd.concat(todos_dfs, ignore_index=True)
+    else:
+        return pd.DataFrame(columns=["Nombre","Fecha","Tipo_Turno","Observacion","Servicio"])
 
 def es_festivo(fecha, tipo_turno):
     try:
@@ -72,14 +82,9 @@ def es_festivo(fecha, tipo_turno):
             return 8
         return 0
     except:
-        return 0  # Si la fecha es inválida o nula, no cuenta como festivo
+        return 0
 
 # ---------------- TRABAJADORES ----------------
-SERVICIOS = ["URGENCIA", "UCI", "HOSPITALIZACIÓN", "CIRUGÍA",
-             "LABORATORIO", "FARMACIA", "AUXILIARES MÉDICOS",
-             "SERVICIOS GENERALES", "MANTENIMIENTO", "SEGURIDAD",
-             "ADMISIONES", "ADMINISTRATIVOS"]
-
 if "trabajadores" not in st.session_state:
     st.session_state.trabajadores = {servicio: [] for servicio in SERVICIOS}
 
@@ -111,7 +116,7 @@ with st.expander("🗑️ Eliminar trabajador"):
 
 # ---------------- FORMULARIO DE TURNOS ----------------
 st.subheader("📋 Registro de turnos")
-df_turnos = leer_turnos()
+df_turnos = leer_todos_turnos()
 
 with st.form("registro_turnos"):
     col1, col2 = st.columns(2)
@@ -146,14 +151,13 @@ with st.form("registro_turnos"):
         for f in fechas_sel:
             guardar_turno(nombre, servicio, f, tipo_turno, observacion)
         st.success("Turnos registrados y guardados en Google Sheets ✅")
-        df_turnos = leer_turnos()
+        df_turnos = leer_todos_turnos()
 
 # ---------------- MOSTRAR DATOS ----------------
 if not df_turnos.empty:
     st.subheader("📑 Turnos registrados")
 
-    required_columns = ["Nombre","Servicio","Fecha","Tipo_Turno","Observacion"]
-    for col in required_columns:
+    for col in ["Nombre","Servicio","Fecha","Tipo_Turno","Observacion"]:
         if col not in df_turnos.columns:
             df_turnos[col] = ""
 
@@ -175,7 +179,11 @@ if not df_turnos.empty:
 
     st.subheader("📥 Exportar reportes")
     with pd.ExcelWriter("reporte_turnos.xlsx", engine="openpyxl") as writer:
+        # Guardar cada servicio en una pestaña
+        for servicio in SERVICIOS:
+            df_servicio = df_turnos[df_turnos["Servicio"]==servicio]
+            if not df_servicio.empty:
+                df_servicio.to_excel(writer, sheet_name=servicio, index=False)
         reporte.to_excel(writer, sheet_name="Consolidado", index=False)
-        df_turnos.to_excel(writer, sheet_name="Detalle", index=False)
     with open("reporte_turnos.xlsx","rb") as f:
         st.download_button("⬇️ Descargar Excel", f, file_name="reporte_turnos.xlsx")
