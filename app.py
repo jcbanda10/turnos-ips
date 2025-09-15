@@ -67,6 +67,15 @@ def guardar_turno(nombre, servicio, fecha, tipo_turno, observacion):
 
     hoja_turnos.append_row([nombre, servicio, str(fecha), tipo_turno, observacion])
 
+def es_festivo(fecha, tipo_turno):
+    try:
+        fecha_date = pd.to_datetime(fecha).date()
+        if tipo_turno == "Festivo" or fecha_date in colombia_holidays:
+            return 8
+        return 0
+    except:
+        return 0  # Si la fecha es inválida o nula, no cuenta como festivo
+
 # ---------------- TRABAJADORES ----------------
 SERVICIOS = ["URGENCIA", "UCI", "HOSPITALIZACIÓN", "CIRUGÍA",
              "LABORATORIO", "FARMACIA", "AUXILIARES MÉDICOS",
@@ -153,9 +162,12 @@ if not df_turnos.empty:
     st.dataframe(df_turnos, use_container_width=True)
 
     # Consolidado
-    df_turnos["Horas_Nocturnas"] = df_turnos.apply(lambda x: 8 if x["Tipo_Turno"]=="Nocturno" else 0, axis=1)
-    df_turnos["Horas_Dominicales"] = df_turnos.apply(lambda x: 8 if x["Tipo_Turno"]=="Dominical" or pd.to_datetime(x["Fecha"]).weekday()==6 else 0, axis=1)
-    df_turnos["Horas_Festivas"] = df_turnos.apply(lambda x: 8 if x["Tipo_Turno"]=="Festivo" or pd.to_datetime(x["Fecha"]).date() in colombia_holidays else 0, axis=1)
+    df_turnos["Horas_Nocturnas"] = df_turnos.apply(lambda x: 8 if x.get("Tipo_Turno","")=="Nocturno" else 0, axis=1)
+    df_turnos["Horas_Dominicales"] = df_turnos.apply(
+        lambda x: 8 if x.get("Tipo_Turno","")=="Dominical" or pd.to_datetime(x.get("Fecha","1970-01-01")).weekday()==6 else 0,
+        axis=1
+    )
+    df_turnos["Horas_Festivas"] = df_turnos.apply(lambda x: es_festivo(x.get("Fecha","1970-01-01"), x.get("Tipo_Turno","")), axis=1)
 
     reporte = df_turnos.groupby(["Servicio","Nombre"])[["Horas_Nocturnas","Horas_Dominicales","Horas_Festivas"]].sum().reset_index()
     reporte["Horas_Totales_Adicionales"] = reporte.sum(axis=1, numeric_only=True)
