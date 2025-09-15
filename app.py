@@ -52,10 +52,10 @@ def leer_turnos():
 def guardar_turno(nombre, servicio, fecha, tipo_turno, observacion):
     df_existente = pd.DataFrame(hoja_turnos.get_all_records())
 
-    # Si el DataFrame está vacío, agregamos el registro directamente
-    if df_existente.empty:
-        hoja_turnos.append_row([nombre, servicio, str(fecha), tipo_turno, observacion])
-        return
+    # Asegurar que las columnas existan
+    for col in ["Nombre","Servicio","Fecha","Tipo_Turno","Observacion"]:
+        if col not in df_existente.columns:
+            df_existente[col] = ""
 
     # Verificamos si ya existe un registro con el mismo nombre y fecha
     if ((df_existente["Nombre"] == nombre) & (df_existente["Fecha"] == str(fecha))).any():
