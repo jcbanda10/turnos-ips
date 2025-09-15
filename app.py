@@ -50,21 +50,19 @@ def leer_turnos():
     return pd.DataFrame(data)
 
 def guardar_turno(nombre, servicio, fecha, tipo_turno, observacion):
-    existing = hoja_turnos.get_all_values()
+    df_existente = pd.DataFrame(hoja_turnos.get_all_records())
 
-    if not existing or existing == [[]]:
-        hoja_turnos.append_row(["Nombre", "Servicio", "Fecha", "Tipo_Turno", "Observacion"])
-        existing = hoja_turnos.get_all_values()
+    # Si el DataFrame está vacío, agregamos el registro directamente
+    if df_existente.empty:
+        hoja_turnos.append_row([nombre, servicio, str(fecha), tipo_turno, observacion])
+        return
 
-    headers = existing[0]
-    data_rows = existing[1:]
-    existing_dicts = [dict(zip(headers, row)) for row in data_rows]
+    # Verificamos si ya existe un registro con el mismo nombre y fecha
+    if ((df_existente["Nombre"] == nombre) & (df_existente["Fecha"] == str(fecha))).any():
+        st.warning(f"⚠️ El trabajador {nombre} ya tiene un turno registrado el {fecha}")
+        return
 
-    for row in existing_dicts:
-        if row.get("Nombre") == nombre and row.get("Fecha") == str(fecha):
-            st.warning(f"⚠️ El trabajador {nombre} ya tiene un turno registrado el {fecha}")
-            return
-
+    # Si no existe, agregamos
     hoja_turnos.append_row([nombre, servicio, str(fecha), tipo_turno, observacion])
 
 def es_festivo(fecha, tipo_turno):
