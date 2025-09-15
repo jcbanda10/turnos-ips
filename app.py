@@ -6,33 +6,38 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 st.set_page_config(page_title="Registro de Turnos IPS", layout="wide")
-
 st.title("🏥 Registro de Turnos IPS con Google Sheets")
 
 # ---------------- CONFIGURACIÓN ----------------
 colombia_holidays = holidays.CO()
 
 # ---------------- CONEXIÓN CON GOOGLE SHEETS ----------------
-scope = ["https://spreadsheets.google.com/feeds","https://www.googleapis.com/auth/drive"]
-creds_dict = st.secrets["google_service_account"]
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-client = gspread.authorize(creds)
+try:
+    scope = ["https://spreadsheets.google.com/feeds","https://www.googleapis.com/auth/drive"]
+    creds_dict = st.secrets["google_service_account"]  # <-- aquí se lee el secreto
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
+except KeyError:
+    st.error(
+        "❌ No se encontró la clave 'google_service_account' en los secretos de Streamlit.\n"
+        "Por favor, crea el secreto en Streamlit Cloud o en .streamlit/secrets.toml."
+    )
+    st.stop()
 
-# Reemplaza con tu Google Sheet ID
-SHEET_ID = "TU_SHEET_ID"
+# ---------------- GOOGLE SHEET ----------------
+SHEET_ID = "TU_SHEET_ID"  # <--- reemplaza con tu ID de Google Sheet
 spreadsheet = client.open_by_key(SHEET_ID)
 
-# Función para leer datos existentes
+# ---------------- FUNCIONES ----------------
 def leer_turnos():
     try:
         hoja = spreadsheet.worksheet("Turnos")
         data = hoja.get_all_records()
         return pd.DataFrame(data)
-    except:
+    except gspread.WorksheetNotFound:
         spreadsheet.add_worksheet(title="Turnos", rows="100", cols="10")
         return pd.DataFrame(columns=["Nombre","Servicio","Fecha","Tipo_Turno","Observacion"])
 
-# Función para guardar un turno
 def guardar_turno(nombre, servicio, fecha, tipo_turno, observacion):
     hoja = spreadsheet.worksheet("Turnos")
     hoja.append_row([nombre, servicio, str(fecha), tipo_turno, observacion])
@@ -120,7 +125,7 @@ if not df_turnos.empty:
     # Consolidado
     df_turnos["Horas_Nocturnas"] = df_turnos.apply(lambda x: 8 if x["Tipo_Turno"]=="Nocturno" else 0, axis=1)
     df_turnos["Horas_Dominicales"] = df_turnos.apply(lambda x: 8 if x["Tipo_Turno"]=="Dominical" or pd.to_datetime(x["Fecha"]).weekday()==6 else 0, axis=1)
-    df_turnos["Horas_Festivas"] = df_turnos.apply(lambda x: 8 if x["Tipo_Turno"]=="Festivo" or pd.to_datetime(x["Fecha"]) in colombia_holidays else 0, axis=1)
+    df_turnos["Horas_Festivas"] = df_turnos.apply(lambda x: 8 if x["Tipo_Turno"]=="Festivo" or pd.to_datetime(x["Fecha"]) in holidays.CO() else 0, axis=1)
 
     reporte = df_turnos.groupby(["Servicio","Nombre"])[["Horas_Nocturnas","Horas_Dominicales","Horas_Festivas"]].sum().reset_index()
     reporte["Horas_Totales_Adicionales"] = reporte.sum(axis=1, numeric_only=True)
