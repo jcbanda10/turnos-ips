@@ -32,7 +32,6 @@ SHEET_ID = "1pTSu9qr79Y544VFOL3_hjXBqvLVV8xR3Loi9fFs3WrY"
 
 # ---------------- FUNCIONES ----------------
 def obtener_hoja(sheet_id, nombre_hoja):
-    """Obtiene o crea una hoja según el nombre de servicio"""
     spreadsheet = client.open_by_key(sheet_id)
     try:
         hoja = spreadsheet.worksheet(nombre_hoja)
@@ -41,24 +40,30 @@ def obtener_hoja(sheet_id, nombre_hoja):
         hoja.append_row(["Nombre", "Fecha", "Tipo_Turno", "Observacion"])
     return hoja
 
+def normalizar_nombre(nombre):
+    return nombre.strip().lower()
+
 def guardar_turno(nombre, servicio, fecha, tipo_turno, observacion):
     hoja = obtener_hoja(SHEET_ID, servicio)
     df_existente = pd.DataFrame(hoja.get_all_records())
-
+    
     # Asegurar columnas
     for col in ["Nombre","Fecha","Tipo_Turno","Observacion"]:
         if col not in df_existente.columns:
             df_existente[col] = ""
 
+    # Normalizar nombre para evitar duplicados
+    nombre_norm = normalizar_nombre(nombre)
+    df_existente["Nombre_norm"] = df_existente["Nombre"].apply(normalizar_nombre)
+
     # Verificar duplicado
-    if ((df_existente["Nombre"] == nombre) & (df_existente["Fecha"] == str(fecha))).any():
+    if ((df_existente["Nombre_norm"] == nombre_norm) & (df_existente["Fecha"] == str(fecha))).any():
         st.warning(f"⚠️ {nombre} ya tiene turno el {fecha} en {servicio}")
         return
 
     hoja.append_row([nombre, str(fecha), tipo_turno, observacion])
 
 def leer_todos_turnos():
-    """Lee todas las pestañas de servicios y las concatena"""
     spreadsheet = client.open_by_key(SHEET_ID)
     todos_dfs = []
 
@@ -68,7 +73,7 @@ def leer_todos_turnos():
         except gspread.WorksheetNotFound:
             hoja = spreadsheet.add_worksheet(title=servicio, rows="100", cols="10")
             hoja.append_row(["Nombre", "Fecha", "Tipo_Turno", "Observacion"])
-            continue  # No hay datos que leer aún
+            continue
 
         df = pd.DataFrame(hoja.get_all_records())
         if not df.empty:
@@ -91,10 +96,7 @@ def es_festivo(fecha, tipo_turno):
 
 # ---------------- TRABAJADORES ----------------
 if "trabajadores" not in st.session_state:
-    # Crear diccionario vacío por servicio
     st.session_state.trabajadores = {servicio: [] for servicio in SERVICIOS}
-
-    # Leer trabajadores existentes desde Google Sheets
     spreadsheet = client.open_by_key(SHEET_ID)
     for servicio in SERVICIOS:
         try:
@@ -104,19 +106,20 @@ if "trabajadores" not in st.session_state:
                 nombres_existentes = df["Nombre"].dropna().unique().tolist()
                 st.session_state.trabajadores[servicio] = nombres_existentes
         except gspread.WorksheetNotFound:
-            continue  # Si la hoja no existe, se mantiene vacía
+            continue
 
 st.subheader("👥 Gestión de trabajadores")
 with st.expander("➕ Agregar trabajador"):
     with st.form("form_add_worker"):
         col1, col2 = st.columns(2)
         with col1:
-            nuevo_nombre = st.text_input("Nombre completo (Nombre + Primer Apellido + Segundo Apellido)").strip()
+            nuevo_nombre = st.text_input("Nombre completo (Nombre + Apellidos)").strip()
         with col2:
             nuevo_servicio = st.selectbox("Servicio", SERVICIOS)
         add_worker = st.form_submit_button("Agregar")
         if add_worker and nuevo_nombre:
-            if nuevo_nombre not in st.session_state.trabajadores[nuevo_servicio]:
+            nombres_norm = [normalizar_nombre(n) for n in st.session_state.trabajadores[nuevo_servicio]]
+            if normalizar_nombre(nuevo_nombre) not in nombres_norm:
                 st.session_state.trabajadores[nuevo_servicio].append(nuevo_nombre)
                 st.success(f"✅ {nuevo_nombre} agregado a {nuevo_servicio}")
             else:
@@ -174,7 +177,6 @@ with st.form("registro_turnos"):
 # ---------------- MOSTRAR DATOS ----------------
 if not df_turnos.empty:
     st.subheader("📑 Turnos registrados")
-
     for col in ["Nombre","Servicio","Fecha","Tipo_Turno","Observacion"]:
         if col not in df_turnos.columns:
             df_turnos[col] = ""
@@ -197,7 +199,6 @@ if not df_turnos.empty:
 
     st.subheader("📥 Exportar reportes")
     with pd.ExcelWriter("reporte_turnos.xlsx", engine="openpyxl") as writer:
-        # Guardar cada servicio en una pestaña
         for servicio in SERVICIOS:
             df_servicio = df_turnos[df_turnos["Servicio"]==servicio]
             if not df_servicio.empty:
