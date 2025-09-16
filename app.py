@@ -38,7 +38,7 @@ def obtener_hoja(sheet_id, nombre_hoja):
         hoja = spreadsheet.worksheet(nombre_hoja)
     except gspread.WorksheetNotFound:
         hoja = spreadsheet.add_worksheet(title=nombre_hoja, rows="100", cols="10")
-        hoja.append_row(["Nombre", "Fecha", "Tipo_Turno", "Observacion"])  # Encabezados
+        hoja.append_row(["Nombre", "Fecha", "Tipo_Turno", "Observacion"])
     return hoja
 
 def guardar_turno(nombre, servicio, fecha, tipo_turno, observacion):
@@ -61,15 +61,21 @@ def leer_todos_turnos():
     """Lee todas las pestañas de servicios y las concatena"""
     spreadsheet = client.open_by_key(SHEET_ID)
     todos_dfs = []
+
     for servicio in SERVICIOS:
         try:
             hoja = spreadsheet.worksheet(servicio)
-            df = pd.DataFrame(hoja.get_all_records())
-            if not df.empty:
-                df["Servicio"] = servicio
-                todos_dfs.append(df)
         except gspread.WorksheetNotFound:
-            continue
+            # Crear hoja vacía con encabezados
+            hoja = spreadsheet.add_worksheet(title=servicio, rows="100", cols="10")
+            hoja.append_row(["Nombre", "Fecha", "Tipo_Turno", "Observacion"])
+            continue  # No hay datos que leer aún
+
+        df = pd.DataFrame(hoja.get_all_records())
+        if not df.empty:
+            df["Servicio"] = servicio
+            todos_dfs.append(df)
+
     if todos_dfs:
         return pd.concat(todos_dfs, ignore_index=True)
     else:
