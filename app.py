@@ -66,7 +66,6 @@ def leer_todos_turnos():
         try:
             hoja = spreadsheet.worksheet(servicio)
         except gspread.WorksheetNotFound:
-            # Crear hoja vacía con encabezados
             hoja = spreadsheet.add_worksheet(title=servicio, rows="100", cols="10")
             hoja.append_row(["Nombre", "Fecha", "Tipo_Turno", "Observacion"])
             continue  # No hay datos que leer aún
@@ -92,7 +91,20 @@ def es_festivo(fecha, tipo_turno):
 
 # ---------------- TRABAJADORES ----------------
 if "trabajadores" not in st.session_state:
+    # Crear diccionario vacío por servicio
     st.session_state.trabajadores = {servicio: [] for servicio in SERVICIOS}
+
+    # Leer trabajadores existentes desde Google Sheets
+    spreadsheet = client.open_by_key(SHEET_ID)
+    for servicio in SERVICIOS:
+        try:
+            hoja = spreadsheet.worksheet(servicio)
+            df = pd.DataFrame(hoja.get_all_records())
+            if "Nombre" in df.columns:
+                nombres_existentes = df["Nombre"].dropna().unique().tolist()
+                st.session_state.trabajadores[servicio] = nombres_existentes
+        except gspread.WorksheetNotFound:
+            continue  # Si la hoja no existe, se mantiene vacía
 
 st.subheader("👥 Gestión de trabajadores")
 with st.expander("➕ Agregar trabajador"):
@@ -191,5 +203,6 @@ if not df_turnos.empty:
             if not df_servicio.empty:
                 df_servicio.to_excel(writer, sheet_name=servicio, index=False)
         reporte.to_excel(writer, sheet_name="Consolidado", index=False)
-    with open("reporte_turnos.xlsx","rb") as f:
+
+    with open("reporte_turnos.xlsx", "rb") as f:
         st.download_button("⬇️ Descargar Excel", f, file_name="reporte_turnos.xlsx")
