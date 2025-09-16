@@ -18,7 +18,10 @@ SERVICIOS = [
 # Conectar con Google Sheets
 try:
     creds_dict = st.secrets["google_service_account"]
-    creds = Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
+    creds = Credentials.from_service_account_info(
+        creds_dict,
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
     client = gspread.authorize(creds)
     spreadsheet = client.open_by_key(SHEET_ID)
 except Exception as e:
@@ -40,15 +43,40 @@ def guardar_turno(nombre, servicio, fecha, tipo_turno, observacion):
     hoja = crear_hoja_si_no_existe(servicio)
     registros = hoja.get_all_records()
     df_existente = pd.DataFrame(registros)
-    
-    # Evitar duplicados
+
+    # Normalizar nombre a minúscula para evitar duplicados
+    nombre_lower = nombre.strip().lower()
+
     if not df_existente.empty:
-        if ((df_existente["Nombre"] == nombre) & (df_existente["Fecha"] == str(fecha))).any():
+        df_existente["Nombre_normalizado"] = df_existente["Nombre"].str.strip().str.lower()
+        if ((df_existente["Nombre_normalizado"] == nombre_lower) & (df_existente["Fecha"] == str(fecha))).any():
             st.warning(f"Turno ya registrado para {nombre} el {fecha}")
             return
-    
+
     hoja.append_row([nombre, str(fecha), tipo_turno, observacion])
     st.success(f"Turno registrado: {nombre} - {tipo_turno} - {fecha}")
+
+def eliminar_persona(nombre, servicio):
+    hoja = crear_hoja_si_no_existe(servicio)
+    registros = hoja.get_all_records()
+    if not registros:
+        st.warning("No hay registros para este servicio")
+        return
+    df = pd.DataFrame(registros)
+    nombre_lower = nombre.strip().lower()
+    df["Nombre_normalizado"] = df["Nombre"].str.strip().str.lower()
+
+    if nombre_lower not in df["Nombre_normalizado"].values:
+        st.warning(f"{nombre} no se encuentra en el servicio {servicio}")
+        return
+
+    # Filtrar las filas que no sean el nombre a eliminar
+    df_filtrado = df[df["Nombre_normalizado"] != nombre_lower].drop(columns=["Nombre_normalizado"])
+    hoja.clear()
+    hoja.append_row(["Nombre","Fecha","Tipo_Turno","Observación"])
+    for _, row in df_filtrado.iterrows():
+        hoja.append_row([row["Nombre"], row["Fecha"], row["Tipo_Turno"], row["Observación"]])
+    st.success(f"{nombre} eliminado del servicio {servicio}")
 
 def leer_todos_turnos():
     todos = []
@@ -68,6 +96,7 @@ def leer_todos_turnos():
 # -------------------
 st.title("Registro de Turnos IPS")
 
+# Formulario para agregar turno
 with st.form("registro_turnos"):
     nombre = st.text_input("Nombre completo")
     servicio = st.selectbox("Servicio", SERVICIOS)
@@ -82,9 +111,19 @@ with st.form("registro_turnos"):
         else:
             st.error("Debe ingresar el nombre del trabajador")
 
-# -------------------
+# Formulario para eliminar persona
+with st.form("eliminar_persona_form"):
+    nombre_eliminar = st.text_input("Nombre completo a eliminar")
+    servicio_eliminar = st.selectbox("Servicio de la persona a eliminar", SERVICIOS, key="eliminar_servicio")
+    eliminar_submit = st.form_submit_button("Eliminar persona")
+    
+    if eliminar_submit:
+        if nombre_eliminar:
+            eliminar_persona(nombre_eliminar, servicio_eliminar)
+        else:
+            st.error("Debe ingresar el nombre de la persona a eliminar")
+
 # Mostrar consolidado
-# -------------------
 df_turnos = leer_todos_turnos()
 if not df_turnos.empty:
     colombia_holidays = holidays.CO()
